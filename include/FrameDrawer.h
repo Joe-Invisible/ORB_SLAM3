@@ -54,7 +54,7 @@ public:
 
 protected:
 
-    void DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText);
+    void DrawTextInfo(cv::Mat &im, int nState, double elapsedTime, cv::Mat &imText);
 
     // Info of the frame to be drawn
     cv::Mat mIm, mImRight;
@@ -68,6 +68,10 @@ protected:
     int mState;
     std::vector<float> mvCurrentDepth;
     float mThDepth;
+    double mElapsedTime = 0.0;
+
+    double mFirstTimestamp = 0.0;
+    bool mbHaveFirstTimestamp = false;
 
     Atlas* mpAtlas;
 

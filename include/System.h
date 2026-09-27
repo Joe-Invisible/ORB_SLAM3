@@ -152,6 +152,9 @@ public:
     // See format details at: http://vision.in.tum.de/data/datasets/rgbd-dataset
     void SaveKeyFrameTrajectoryTUM(const string &filename);
 
+    // Save sparse MapPoints as one PLY file per Atlas map.
+    void SavePointCloudPLY(const string &baseFilename);
+
     void SaveTrajectoryEuRoC(const string &filename);
     void SaveKeyFrameTrajectoryEuRoC(const string &filename);
 

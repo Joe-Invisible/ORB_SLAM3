@@ -23,6 +23,8 @@
 #include <thread>
 #include <pangolin/pangolin.h>
 #include <iomanip>
+#include <fstream>
+#include <cmath>
 #include <openssl/md5.h>
 #include <boost/serialization/base_object.hpp>
 #include <boost/serialization/string.hpp>
@@ -624,6 +626,107 @@ void System::SaveTrajectoryTUM(const string &filename)
     }
     f.close();
     // cout << endl << "trajectory saved!" << endl;
+}
+
+void System::SavePointCloudPLY(const string &baseFilename)
+{
+    const vector<Map*> maps = mpAtlas->GetAllMaps();
+
+    size_t savedMaps = 0;
+
+    for (Map* pMap : maps)
+    {
+        if (pMap == nullptr || pMap->IsBad())
+            continue;
+
+        const vector<MapPoint*> mapPoints =
+            pMap->GetAllMapPoints();
+
+        vector<Eigen::Vector3f> validPoints;
+        validPoints.reserve(mapPoints.size());
+
+        for (MapPoint* pMP : mapPoints)
+        {
+            if (pMP == nullptr || pMP->isBad())
+                continue;
+
+            const Eigen::Vector3f pos =
+                pMP->GetWorldPos();
+
+            if (!std::isfinite(pos.x()) ||
+                !std::isfinite(pos.y()) ||
+                !std::isfinite(pos.z()))
+            {
+                continue;
+            }
+
+            validPoints.push_back(pos);
+        }
+
+        if (validPoints.empty())
+        {
+            cout << "Map " << pMap->GetId()
+                 << " contains no valid MapPoints."
+                 << endl;
+
+            continue;
+        }
+
+        const string filename =
+            baseFilename +
+            "_map_" +
+            to_string(pMap->GetId()) +
+            ".ply";
+
+        ofstream file(filename);
+
+        if (!file.is_open())
+        {
+            cerr << "Could not create point-cloud file: "
+                 << filename << endl;
+
+            continue;
+        }
+
+        // ASCII PLY header
+        file << "ply\n";
+        file << "format ascii 1.0\n";
+        file << "comment ORB-SLAM3 sparse map\n";
+        file << "comment map_id " << pMap->GetId() << "\n";
+
+        file << "element vertex "
+             << validPoints.size()
+             << "\n";
+
+        file << "property float x\n";
+        file << "property float y\n";
+        file << "property float z\n";
+        file << "end_header\n";
+
+        file << fixed << setprecision(7);
+
+        for (const Eigen::Vector3f& p : validPoints)
+        {
+            file << p.x() << ' '
+                 << p.y() << ' '
+                 << p.z() << '\n';
+        }
+
+        file.close();
+
+        cout << "Saved "
+             << validPoints.size()
+             << " MapPoints to "
+             << filename
+             << endl;
+
+        ++savedMaps;
+    }
+
+    cout << "Saved point clouds for "
+         << savedMaps
+         << " Atlas map(s)."
+         << endl;
 }
 
 void System::SaveKeyFrameTrajectoryTUM(const string &filename)

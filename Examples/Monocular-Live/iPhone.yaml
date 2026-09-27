@@ -1,0 +1,78 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# iPhone / OctoStream live monocular camera
+#
+# Stream:
+#   1280 x 720
+#   30 FPS
+#   H.264 / RTSP / UDP
+#
+# Calibration:
+#   9 x 6 inner-corner checkerboard
+#   28 mm square size
+#--------------------------------------------------------------------------------------------
+
+File.version: "1.0"
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters
+#--------------------------------------------------------------------------------------------
+
+Camera.type: "PinHole"
+
+# Camera calibration and distortion parameters
+Camera1.fx: 883.221
+Camera1.fy: 880.921
+Camera1.cx: 641.493
+Camera1.cy: 365.155
+
+Camera1.k1: 0.186887
+Camera1.k2: -0.746695
+Camera1.p1: -0.0000035
+Camera1.p2: -0.001050
+Camera1.k3: 0.853435
+
+# Camera resolution
+Camera.width: 1280
+Camera.height: 720
+
+# Camera frame rate
+Camera.fps: 30
+
+# GStreamer videoconvert outputs BGR
+# 0 = BGR, 1 = RGB
+Camera.RGB: 0
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters
+#--------------------------------------------------------------------------------------------
+
+# Number of ORB features extracted per frame
+ORBextractor.nFeatures: 1000
+
+# Scale factor between pyramid levels
+ORBextractor.scaleFactor: 1.2
+
+# Number of pyramid levels
+ORBextractor.nLevels: 8
+
+# FAST thresholds
+ORBextractor.iniThFAST: 20
+ORBextractor.minThFAST: 7
+
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters
+#--------------------------------------------------------------------------------------------
+
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2.0
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3.0
+
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -1.8
+Viewer.ViewpointF: 500.0

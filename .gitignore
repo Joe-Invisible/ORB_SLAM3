@@ -91,3 +91,118 @@ my_settings.txt
 borrar/*
 
 */ExecMean.txt
+
+# =============================================================================
+# FYP0852 local/generated files
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Build/editor tooling
+# ---------------------------------------------------------------------------
+
+compile_commands.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+.vscode/
+.cache/
+.clangd/
+*.swp
+*.swo
+*~
+
+# ---------------------------------------------------------------------------
+# Runtime SLAM outputs
+# ---------------------------------------------------------------------------
+
+*.ply
+
+live_tracking_stats.csv
+live_imu_stats.csv
+imu_bias_log.csv
+imu_initialization_log.csv
+
+KeyFrameTrajectory*.txt
+CameraTrajectory*.txt
+
+# ---------------------------------------------------------------------------
+# Dataset recorder outputs
+#
+# Keep recorder/player SOURCE CODE under Examples/DatasetIO tracked.
+# Keep actual recorded sessions out of Git.
+# ---------------------------------------------------------------------------
+
+/datasets/
+/dataset/
+/recordings/
+/sessions/
+/captures/
+
+Examples/DatasetIO/datasets/
+Examples/DatasetIO/recordings/
+Examples/DatasetIO/sessions/
+Examples/DatasetIO/captures/
+
+# Recorded video
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Large raw sensor/data recordings
+*.bag
+*.db3
+
+# ---------------------------------------------------------------------------
+# Calibration experiment outputs
+#
+# Do NOT globally ignore *.yaml or *.csv:
+# calibration/configuration files may intentionally belong in the repository.
+# ---------------------------------------------------------------------------
+
+allan_*_curve.csv
+allan_*_results.txt
+allan_*_accelerometer.png
+allan_*_gyroscope.png
+
+# ---------------------------------------------------------------------------
+# Misc runtime logs
+# ---------------------------------------------------------------------------
+
+*.log
+core
+core.*
+
+# =============================================================================
+# FYP experimental/generated data
+# =============================================================================
+
+# Windows/WSL download metadata
+*:Zone.Identifier
+
+# Temporary files
+*.TMP
+*~RF*.TMP
+
+# Large feature dumps
+feature_points.csv
+person_feature_points.csv
+geometric_motion_pairs.csv
+frame_motion_metrics.csv
+
+Examples/Monocular-Live/feature_counts.csv
+feature_counts.csv
+
+# Experimental run output
+/results/tum_rgbd_dynamic/inspection_runs/
+/results/tum_rgbd_dynamic/feature_inspection/
+
+# Large model weights
+*.pt
+
+# Generated evaluation plots and intermediate result tables
+/results/**/plots/
+/results/**/*.png
+/status*.txt

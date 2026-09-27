@@ -24,6 +24,9 @@
 
 #include<mutex>
 
+#include <iomanip>
+#include <fstream>
+
 namespace ORB_SLAM3
 {
 
@@ -45,6 +48,7 @@ cv::Mat FrameDrawer::DrawFrame(float imageScale)
     int state; // Tracking state
     vector<float> vCurrentDepth;
     float thDepth;
+    double elapsedTime;
 
     Frame currentFrame;
     vector<MapPoint*> vpLocalMap;
@@ -61,6 +65,7 @@ cv::Mat FrameDrawer::DrawFrame(float imageScale)
     //Copy variables within scoped mutex
     {
         unique_lock<mutex> lock(mMutex);
+        elapsedTime = mElapsedTime;
         state=mState;
         if(mState==Tracking::SYSTEM_NOT_READY)
             mState=Tracking::NO_IMAGES_YET;
@@ -153,6 +158,18 @@ cv::Mat FrameDrawer::DrawFrame(float imageScale)
         mnTrackedVO=0;
         const float r = 5;
         int n = vCurrentKeys.size();
+
+        // DEBUG: show every extracted ORB keypoint in gray
+        for(const auto &kp : vCurrentKeys)
+        {
+            cv::Point2f p = kp.pt;
+
+            if(imageScale != 1.f)
+                p /= imageScale;
+
+            cv::circle(im, p, 1, cv::Scalar(160,160,160), -1);
+        }
+
         for(int i=0;i<n;i++)
         {
             if(vbVO[i] || vbMap[i])
@@ -193,10 +210,45 @@ cv::Mat FrameDrawer::DrawFrame(float imageScale)
                 }
             }
         }
+
+                // DEBUG: show matched MapPoints rejected by tracking in red
+        for(const auto &kp : vOutlierKeys)
+        {
+            cv::Point2f p = kp.pt;
+
+            if(imageScale != 1.f)
+                p /= imageScale;
+
+            cv::drawMarker(
+                im,
+                p,
+                cv::Scalar(0,0,255),
+                cv::MARKER_TILTED_CROSS,
+                8,
+                1
+            );
+        }
+
+        // DEBUG: counts
+        stringstream dbg;
+        dbg << "ORB: " << n
+            << "  map inliers: " << mnTracked
+            << "  VO: " << mnTrackedVO
+            << "  outliers: " << vOutlierKeys.size();
+
+        cv::putText(
+            im,
+            dbg.str(),
+            cv::Point(10,20),
+            cv::FONT_HERSHEY_PLAIN,
+            1.0,
+            cv::Scalar(255,255,255),
+            1
+        );
     }
 
     cv::Mat imWithInfo;
-    DrawTextInfo(im,state, imWithInfo);
+    DrawTextInfo(im, state, elapsedTime, imWithInfo);
 
     return imWithInfo;
 }
@@ -209,10 +261,12 @@ cv::Mat FrameDrawer::DrawRightFrame(float imageScale)
     vector<cv::KeyPoint> vCurrentKeys; // KeyPoints in current frame
     vector<bool> vbVO, vbMap; // Tracked MapPoints in current frame
     int state; // Tracking state
+    double elapsedTime;
 
     //Copy variables within scoped mutex
     {
         unique_lock<mutex> lock(mMutex);
+        elapsedTime = mElapsedTime;
         state=mState;
         if(mState==Tracking::SYSTEM_NOT_READY)
             mState=Tracking::NO_IMAGES_YET;
@@ -321,14 +375,14 @@ cv::Mat FrameDrawer::DrawRightFrame(float imageScale)
     }
 
     cv::Mat imWithInfo;
-    DrawTextInfo(im,state, imWithInfo);
+    DrawTextInfo(im, state, elapsedTime, imWithInfo);
 
     return imWithInfo;
 }
 
 
 
-void FrameDrawer::DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText)
+void FrameDrawer::DrawTextInfo(cv::Mat &im, int nState, double elapsedTime, cv::Mat &imText)
 {
     stringstream s;
     if(nState==Tracking::NO_IMAGES_YET)
@@ -357,6 +411,9 @@ void FrameDrawer::DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText)
         s << " LOADING ORB VOCABULARY. PLEASE WAIT...";
     }
 
+    s << " | t: " << fixed << setprecision(2)
+        << elapsedTime << " s";
+
     int baseline=0;
     cv::Size textSize = cv::getTextSize(s.str(),cv::FONT_HERSHEY_PLAIN,1,1,&baseline);
 
@@ -384,12 +441,50 @@ void FrameDrawer::Update(Tracking *pTracker)
         N = mvCurrentKeys.size();
     }
 
+    // Per-frame summary log.
+    static std::ofstream featureLog("feature_counts.csv");
+    static bool headerWritten = false;
+
+    // Per-feature log. For RGB-D, this logs all keypoints in mvCurrentKeys.
+    static std::ofstream featurePointLog("feature_points.csv");
+    static bool pointHeaderWritten = false;
+
+    // Keep the log time relative to the first frame seen by FrameDrawer.
+    static double firstTimestamp = -1.0;
+
+    if(!headerWritten)
+    {
+        featureLog << "time,total_orb,map_inliers,vo_inliers,outliers\n";
+        headerWritten = true;
+    }
+
+    if(!pointHeaderWritten)
+    {
+        featurePointLog
+            << "time,timestamp,feature_id,x,y,status,map_point_id,observations\n";
+        pointHeaderWritten = true;
+    }
+
+    const double timestamp = pTracker->mCurrentFrame.mTimeStamp;
+
+    if(firstTimestamp < 0.0)
+        firstTimestamp = timestamp;
+
+    const double elapsedTime = timestamp - firstTimestamp;
+
     mvbVO = vector<bool>(N,false);
     mvbMap = vector<bool>(N,false);
     mbOnlyTracking = pTracker->mbOnlyTracking;
 
-    //Variables for the new visualization
+    // Variables for the visualization.
     mCurrentFrame = pTracker->mCurrentFrame;
+    if(!mbHaveFirstTimestamp)
+    {
+        mFirstTimestamp = pTracker->mCurrentFrame.mTimeStamp;
+        mbHaveFirstTimestamp = true;
+    }
+
+    mElapsedTime = pTracker->mCurrentFrame.mTimeStamp - mFirstTimestamp;
     mmProjectPoints = mCurrentFrame.mmProjectPoints;
     mmMatchedInImage.clear();
 
@@ -402,6 +497,10 @@ void FrameDrawer::Update(Tracking *pTracker)
     mvOutlierKeys.reserve(N);
     mvpOutlierMPs.clear();
     mvpOutlierMPs.reserve(N);
+
+    int nMapInliers = 0;
+    int nVOInliers = 0;
+    int nOutliers = 0;
 
     if(pTracker->mLastProcessedState==Tracking::NOT_INITIALIZED)
     {
@@ -418,21 +517,90 @@ void FrameDrawer::Update(Tracking *pTracker)
                 if(!pTracker->mCurrentFrame.mvbOutlier[i])
                 {
                     if(pMP->Observations()>0)
+                    {
                         mvbMap[i]=true;
+                        nMapInliers++;
+                    }
                     else
+                    {
                         mvbVO[i]=true;
-
+                        nVOInliers++;
+                    }
                     mmMatchedInImage[pMP->mnId] = mvCurrentKeys[i].pt;
                 }
                 else
                 {
                     mvpOutlierMPs.push_back(pMP);
                     mvOutlierKeys.push_back(mvCurrentKeys[i]);
+                    nOutliers++;
                 }
             }
         }
-
     }
+
+    // One summary row per processed frame.
+    featureLog << std::fixed << std::setprecision(6)
+               << elapsedTime << ","
+               << N << ","
+               << nMapInliers << ","
+               << nVOInliers << ","
+               << nOutliers << "\n";
+    featureLog.flush();
+
+    // One row per ORB feature in the main/left image.
+    // status is one of:
+    //   orb_only    : extracted ORB feature with no accepted MapPoint association
+    //   map_inlier  : accepted association to an established MapPoint
+    //   vo_inlier   : accepted association to a temporary VO MapPoint
+    //   outlier     : MapPoint association rejected by tracking
+    const int nLeft = static_cast<int>(mvCurrentKeys.size());
+
+    for(int i=0; i<nLeft; i++)
+    {
+        const cv::KeyPoint &kp = mvCurrentKeys[i];
+        MapPoint* pMP = nullptr;
+
+        if(i < static_cast<int>(pTracker->mCurrentFrame.mvpMapPoints.size()))
+            pMP = pTracker->mCurrentFrame.mvpMapPoints[i];
+
+        string status = "orb_only";
+        int observations = 0;
+
+        if(pMP)
+        {
+            observations = pMP->Observations();
+
+            if(pTracker->mLastProcessedState==Tracking::OK)
+            {
+                const bool isOutlier =
+                    i < static_cast<int>(pTracker->mCurrentFrame.mvbOutlier.size()) &&
+                    pTracker->mCurrentFrame.mvbOutlier[i];
+
+                if(isOutlier)
+                    status = "outlier";
+                else if(observations > 0)
+                    status = "map_inlier";
+                else
+                    status = "vo_inlier";
+            }
+        }
+
+        featurePointLog << std::fixed << std::setprecision(6)
+                        << elapsedTime << ","
+                        << timestamp << ","
+                        << i << ","
+                        << kp.pt.x << ","
+                        << kp.pt.y << ","
+                        << status << ",";
+
+        if(pMP)
+            featurePointLog << pMP->mnId;
+        else
+            featurePointLog << -1;
+
+        featurePointLog << "," << observations << "\n";
+    }
+
     mState=static_cast<int>(pTracker->mLastProcessedState);
 }
 
