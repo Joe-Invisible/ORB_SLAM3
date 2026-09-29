@@ -6,9 +6,8 @@
 #include <vector>
 
 // Sensor mode describes what a LiveFrame contains and how ORB-SLAM3 should
-// consume it. The current RTSP source only produces MONO. The remaining modes
-// are deliberately represented here so future sources can plug into the same
-// main loop without redesigning the downstream interface.
+// consume it. Acquisition backends advertise the modes they actually provide,
+// while the downstream interface remains shared across camera/IMU combinations.
 enum class LiveSensorMode {
     MONO,
     MONO_IMU,
@@ -40,9 +39,31 @@ struct LiveImuSample {
     double accel_z = 0.0;
 };
 
+// Optional acquisition diagnostics. These timestamps are intentionally kept
+// separate from LiveFrame::timestamp_ns because they may live in different
+// clock domains. They are for timing analysis, not direct SLAM consumption.
+struct LiveCameraTiming {
+    bool valid = false;
+
+    // Raw GStreamer timestamps carried by the decoded video buffer.
+    std::int64_t source_pts_ns = -1;
+    std::int64_t source_dts_ns = -1;
+
+    // Host steady_clock timestamps around appsink delivery / image copy.
+    std::int64_t host_pull_ns = -1;
+    std::int64_t host_copy_done_ns = -1;
+
+    // Same host_pull event mapped into the SensorLog phone clock.
+    std::int64_t host_mapped_phone_ns = -1;
+
+    // Camera timestamp in the SensorLog phone clock before session-origin
+    // subtraction. This includes the configured constant camera offset.
+    std::int64_t frame_phone_time_ns = -1;
+};
+
 struct LiveFrame {
-    // All streams in one LiveFrame must use the same clock domain.
-    // The current RTSP source uses nanoseconds since the first received frame.
+    // All sensor streams in one LiveFrame must use the same clock domain.
+    // timestamp_ns is relative to the source's session origin.
     std::int64_t timestamp_ns = 0;
 
     // MONO / MONO_IMU: image0 only
@@ -54,4 +75,7 @@ struct LiveFrame {
 
     // IMU samples since the previous camera frame, up to this frame timestamp.
     std::vector<LiveImuSample> imu;
+
+    // Optional source-level timing diagnostics.
+    LiveCameraTiming camera_timing;
 };

@@ -419,11 +419,23 @@ include_directories(
 )
 
 find_package(Threads REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GSTREAMER REQUIRED
+    gstreamer-1.0
+    gstreamer-app-1.0
+    gstreamer-video-1.0
+)
+
+include_directories(${GSTREAMER_INCLUDE_DIRS})
+link_directories(${GSTREAMER_LIBRARY_DIRS})
+add_definitions(${GSTREAMER_CFLAGS_OTHER})
 
 add_executable(live_runner
     Examples/Live/live_main.cc
     Examples/Live/LiveConfig.cc
     Examples/Live/RtspCameraSource.cc
+    Examples/Live/RtspMonoImuSource.cc
+    Examples/Live/SensorLogImuReceiver.cc
     Examples/Live/OrbSlamRunner.cc
     Examples/DatasetIO/DatasetRecorder.cc
 )
@@ -431,6 +443,7 @@ add_executable(live_runner
 target_link_libraries(live_runner
     ${PROJECT_NAME}
     ${CMAKE_THREAD_LIBS_INIT}
+    ${GSTREAMER_LIBRARIES}
 )
 
 # Do not inherit whichever runtime output directory happened to be set by the

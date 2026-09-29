@@ -128,16 +128,47 @@ void LocalMapping::Run()
 
                     if(mbInertial && mpCurrentKeyFrame->GetMap()->isImuInitialized())
                     {
-                        float dist = (mpCurrentKeyFrame->mPrevKF->GetCameraCenter() - mpCurrentKeyFrame->GetCameraCenter()).norm() +
-                                (mpCurrentKeyFrame->mPrevKF->mPrevKF->GetCameraCenter() - mpCurrentKeyFrame->mPrevKF->GetCameraCenter()).norm();
+                        const float dist1 =
+                            (mpCurrentKeyFrame->mPrevKF->GetCameraCenter() -
+                         mpCurrentKeyFrame->GetCameraCenter()).norm();
 
-                        if(dist>0.05)
-                            mTinit += mpCurrentKeyFrame->mTimeStamp - mpCurrentKeyFrame->mPrevKF->mTimeStamp;
+                    const float dist2 =
+                        (mpCurrentKeyFrame->mPrevKF->mPrevKF->GetCameraCenter() -
+                         mpCurrentKeyFrame->mPrevKF->GetCameraCenter()).norm();
+
+                    const float dist = dist1 + dist2;
+
+                    const double dt =
+                        mpCurrentKeyFrame->mTimeStamp -
+                        mpCurrentKeyFrame->mPrevKF->mTimeStamp;
+
+                    const bool countsForInit = dist > 0.05f;
+
+                    if(countsForInit)
+                        mTinit += dt;
+
+                    cout << "[IMU INIT DBG]"
+                         << " KF=" << mpCurrentKeyFrame->mnId
+                         << " dt=" << dt
+                         << " d1=" << dist1
+                         << " d2=" << dist2
+                         << " dist=" << dist
+                         << " counts=" << countsForInit
+                         << " mTinit=" << mTinit
+                         << " BA1=" << mpCurrentKeyFrame->GetMap()->GetIniertialBA1()
+                         << " BA2=" << mpCurrentKeyFrame->GetMap()->GetIniertialBA2()
+                         << " inliers=" << mpTracker->GetMatchesInliers()
+                         << endl;
                         if(!mpCurrentKeyFrame->GetMap()->GetIniertialBA2())
                         {
                             if((mTinit<10.f) && (dist<0.02))
                             {
-                                cout << "Not enough motion for initializing. Reseting..." << endl;
+                                cout << "[IMU INIT RESET]"
+                                     << " KF=" << mpCurrentKeyFrame->mnId
+                                     << " dist=" << dist
+                                     << " mTinit=" << mTinit
+                                     << " (reset condition: mTinit < 10 && dist < 0.02)"
+                                     << endl;
                                 unique_lock<mutex> lock(mMutexReset);
                                 mbResetRequestedActiveMap = true;
                                 mpMapToReset = mpCurrentKeyFrame->GetMap();

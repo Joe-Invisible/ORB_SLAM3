@@ -41,11 +41,16 @@ std::string LiveUsage() {
         << "  --rtsp URL                 RTSP camera URL\n"
         << "  --sensor MODE              mono | mono-imu | stereo | stereo-imu | rgbd\n"
         << "  --width N                  Expected camera width (default: 1280)\n"
-        << "  --height N                 Expected camera height (default: 720)\n\n"
-        << "Current source limitation:\n"
-        << "  The RTSP source supplies one camera only, so it currently supports\n"
-        << "  --sensor mono. Other modes already have downstream data types/SLAM\n"
-        << "  adapters, but need the corresponding acquisition source.\n";
+        << "  --height N                 Expected camera height (default: 720)\n"
+        << "  --imu-port N               SensorLog UDP port (default: 5555)\n"
+        << "  --imu-timeout-ms N         Max wait for IMU coverage (default: 500)\n"
+        << "  --camera-time-offset-ms X  Constant camera timing correction in ms\n\n"
+        << "Current RTSP modes:\n"
+        << "  mono      : camera only (OpenCV/GStreamer frontend)\n"
+        << "  mono-imu  : native GStreamer appsink camera + SensorLog UDP IMU\n"
+        << "              Camera cadence is taken from GstBuffer PTS; host arrival\n"
+        << "              timestamps are recorded only as diagnostics.\n"
+        << "  stereo / stereo-imu / rgbd still need acquisition backends.\n";
     return os.str();
 }
 
@@ -91,6 +96,15 @@ LiveConfig ParseLiveConfig(int argc, char** argv) {
         } else if (arg == "--height") {
             if (++i >= argc) throw std::runtime_error("--height requires an integer");
             cfg.expected_height = parsePositiveInt(argv[i], "--height");
+        } else if (arg == "--imu-port") {
+            if (++i >= argc) throw std::runtime_error("--imu-port requires an integer");
+            cfg.imu_port = parsePositiveInt(argv[i], "--imu-port");
+        } else if (arg == "--imu-timeout-ms") {
+            if (++i >= argc) throw std::runtime_error("--imu-timeout-ms requires an integer");
+            cfg.imu_timeout_ms = parsePositiveInt(argv[i], "--imu-timeout-ms");
+        } else if (arg == "--camera-time-offset-ms") {
+            if (++i >= argc) throw std::runtime_error("--camera-time-offset-ms requires a number");
+            cfg.camera_time_offset_ms = std::atof(argv[i]);
         } else {
             throw std::runtime_error("Unknown argument: " + arg + "\n\n" + LiveUsage());
         }

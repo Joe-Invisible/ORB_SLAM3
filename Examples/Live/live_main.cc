@@ -2,12 +2,14 @@
 #include "LiveSource.h"
 #include "OrbSlamRunner.h"
 #include "RtspCameraSource.h"
+#include "RtspMonoImuSource.h"
 
 #include "DatasetRecorder.h"
 
 #include <csignal>
 #include <cstdint>
 #include <exception>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -22,6 +24,16 @@ void signalHandler(int) {
 
 std::unique_ptr<LiveSource> makeSource(const LiveConfig& cfg) {
     if (cfg.source == "rtsp") {
+        if (cfg.sensor == LiveSensorMode::MONO_IMU) {
+            return std::unique_ptr<LiveSource>(new RtspMonoImuSource(
+                cfg.rtsp_url,
+                cfg.expected_width,
+                cfg.expected_height,
+                cfg.imu_port,
+                cfg.imu_timeout_ms,
+                cfg.camera_time_offset_ms));
+        }
+
         return std::unique_ptr<LiveSource>(new RtspCameraSource(
             cfg.rtsp_url,
             cfg.expected_width,
@@ -43,8 +55,8 @@ int main(int argc, char** argv) {
         if (!source->supports(cfg.sensor)) {
             throw std::runtime_error(
                 source->description() + " does not provide sensor mode '" +
-                LiveSensorModeName(cfg.sensor) + "'. The current RTSP frontend is camera-only. "
-                "Add/select a source that also supplies the required streams.");
+                LiveSensorModeName(cfg.sensor) + "'. Add/select a source that supplies "
+                "the required streams.");
         }
 
         std::cout
@@ -61,6 +73,7 @@ int main(int argc, char** argv) {
         if (!source->open()) return 1;
 
         std::unique_ptr<DatasetRecorder> recorder;
+        std::ofstream camera_timing_csv;
         if (cfg.record) {
             recorder.reset(new DatasetRecorder(cfg.dataset_dir));
             if (!recorder->good()) {
@@ -93,6 +106,31 @@ int main(int argc, char** argv) {
                     throw std::runtime_error(recorder->errorMessage());
                 }
 
+                // Source-specific timing diagnostics stay out of the canonical
+                // camera.csv format. Open the sidecar lazily so sources that
+                // do not provide these diagnostics create no extra file.
+                if (frame.camera_timing.valid) {
+                    if (!camera_timing_csv.is_open()) {
+                        camera_timing_csv.open(
+                            (cfg.dataset_dir + "/camera_timing.csv").c_str(),
+                            std::ios::out | std::ios::trunc);
+                        if (!camera_timing_csv) {
+                            throw std::runtime_error(
+                                "Failed to open camera_timing.csv in " + cfg.dataset_dir);
+                        }
+                        camera_timing_csv
+                            << "timestamp_ns,source_pts_ns,source_dts_ns,"
+                            << "host_pull_ns,host_copy_done_ns,"
+                            << "host_mapped_phone_ns,frame_phone_time_ns\n";
+                    }
+                    const LiveCameraTiming& t = frame.camera_timing;
+                    camera_timing_csv
+                        << frame.timestamp_ns << ',' << t.source_pts_ns << ','
+                        << t.source_dts_ns << ',' << t.host_pull_ns << ','
+                        << t.host_copy_done_ns << ',' << t.host_mapped_phone_ns
+                        << ',' << t.frame_phone_time_ns << '\n';
+                }
+
                 for (std::size_t i = 0; i < frame.imu.size(); ++i) {
                     const LiveImuSample& m = frame.imu[i];
                     if (!recorder->recordImu(
@@ -117,6 +155,14 @@ int main(int argc, char** argv) {
                     << (static_cast<double>(frame.timestamp_ns) * 1e-9) << " s"
                     << "       " << std::flush;
             }
+        }
+
+        if (camera_timing_csv.is_open()) {
+            camera_timing_csv.flush();
+            if (!camera_timing_csv) {
+                throw std::runtime_error("Failed while writing camera_timing.csv");
+            }
+            camera_timing_csv.close();
         }
 
         source->close();
