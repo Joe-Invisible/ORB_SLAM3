@@ -406,7 +406,7 @@ bool RtspMonoImuSource::read(LiveFrame& frame) {
     frame.timestamp_ns = static_cast<std::int64_t>(
         std::llround((frame_phone_time_s - phone_time_origin_s_) * 1e9));
     frame.image0 = pulled.image;
-    imu_receiver_.popThrough(
+    imu_receiver_.popThroughAndOneAfter(
         frame_phone_time_s,
         phone_time_origin_s_,
         frame.imu);

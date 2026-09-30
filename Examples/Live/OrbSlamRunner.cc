@@ -151,6 +151,87 @@ bool OrbSlamRunner::process(const LiveFrame& frame) {
 
     const std::vector<ORB_SLAM3::IMU::Point> imu = convertImu(frame.imu);
 
+    if (sensor_ == LiveSensorMode::MONO_IMU ||
+        sensor_ == LiveSensorMode::STEREO_IMU) {
+        const bool missing_imu = frame_count_ > 0 && frame.imu.empty();
+
+        double first_imu_s = 0.0;
+        double last_imu_s = 0.0;
+        double first_after_prev_ms = 0.0;
+        double cam_after_last_ms = 0.0;
+        double mean_imu_dt_ms = 0.0;
+        double mean_acc_norm = 0.0;
+        double mean_gyro_norm = 0.0;
+
+        if (!frame.imu.empty()) {
+            first_imu_s = seconds(frame.imu.front().timestamp_ns);
+            last_imu_s = seconds(frame.imu.back().timestamp_ns);
+
+            if (frame_count_ > 0) {
+                first_after_prev_ms =
+                    (first_imu_s - previous_timestamp_s_) * 1000.0;
+            }
+            cam_after_last_ms = (timestamp_s - last_imu_s) * 1000.0;
+
+            for (std::size_t i = 0; i < frame.imu.size(); ++i) {
+                const LiveImuSample& m = frame.imu[i];
+                mean_acc_norm += std::sqrt(
+                    m.accel_x * m.accel_x +
+                    m.accel_y * m.accel_y +
+                    m.accel_z * m.accel_z);
+                mean_gyro_norm += std::sqrt(
+                    m.gyro_x * m.gyro_x +
+                    m.gyro_y * m.gyro_y +
+                    m.gyro_z * m.gyro_z);
+
+                if (i > 0) {
+                    mean_imu_dt_ms +=
+                        seconds(frame.imu[i].timestamp_ns -
+                                frame.imu[i - 1].timestamp_ns) * 1000.0;
+                }
+            }
+
+            mean_acc_norm /= static_cast<double>(frame.imu.size());
+            mean_gyro_norm /= static_cast<double>(frame.imu.size());
+            if (frame.imu.size() > 1) {
+                mean_imu_dt_ms /=
+                    static_cast<double>(frame.imu.size() - 1);
+            }
+        }
+
+        const bool timing_suspicious =
+            missing_imu ||
+            (!frame.imu.empty() &&
+             (cam_after_last_ms < -15.0 || cam_after_last_ms > 5.0));
+
+        if (frame_count_ < 10 ||
+            ((frame_count_ + 1) % 30 == 0) ||
+            timing_suspicious) {
+            std::cout
+                << "\n[VIO INPUT]"
+                << " frame=" << frame_count_
+                << " cam=" << std::fixed << std::setprecision(6)
+                << timestamp_s
+                << " cam_dt_ms=" << std::setprecision(3) << frame_dt_ms
+                << " imu_n=" << frame.imu.size();
+
+            if (!frame.imu.empty()) {
+                std::cout
+                    << " imu_first=" << std::setprecision(6) << first_imu_s
+                    << " imu_last=" << last_imu_s
+                    << " first_after_prev_ms=" << std::setprecision(3)
+                    << first_after_prev_ms
+                    << " cam_after_last_ms=" << cam_after_last_ms
+                    << " imu_dt_mean_ms=" << mean_imu_dt_ms
+                    << " acc_norm_mean=" << mean_acc_norm
+                    << " gyro_norm_mean=" << mean_gyro_norm;
+            }
+
+            if (missing_imu) std::cout << " WARNING=no_imu_batch";
+            std::cout << '\n';
+        }
+    }
+
     const std::chrono::steady_clock::time_point track_start =
         std::chrono::steady_clock::now();
 

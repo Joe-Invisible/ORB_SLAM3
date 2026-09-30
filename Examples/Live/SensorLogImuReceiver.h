@@ -36,17 +36,21 @@ public:
     bool phoneTimeForHostNs(std::int64_t host_time_ns,
                             double& phone_time_s) const;
 
-    // Wait until the receiver has produced synchronized IMU through this phone
-    // timestamp. Returns false on timeout or receiver failure.
+    // Wait until the receiver has produced a synchronized IMU sample strictly
+    // after this phone timestamp. ORB-SLAM3's preintegrator benefits from one
+    // sample beyond each camera boundary so it can interpolate to the exact
+    // frame time instead of extrapolating from an older sample.
     bool waitUntilPhoneTime(double phone_time_s, int timeout_ms);
 
     void discardThrough(double phone_time_s);
 
-    // Pop synchronized samples through end_phone_time_s and convert them into
-    // LiveImuSample timestamps relative to origin_phone_time_s.
-    void popThrough(double end_phone_time_s,
-                    double origin_phone_time_s,
-                    std::vector<LiveImuSample>& output);
+    // Pop all synchronized samples through end_phone_time_s plus the first
+    // sample strictly after it. That final sample is consumed here only once;
+    // ORB-SLAM3 keeps it in its own IMU queue as the interpolation endpoint for
+    // this frame and the starting-side sample for the next interval.
+    void popThroughAndOneAfter(double end_phone_time_s,
+                               double origin_phone_time_s,
+                               std::vector<LiveImuSample>& output);
 
     std::size_t packetCount() const;
     std::size_t synchronizedCount() const;

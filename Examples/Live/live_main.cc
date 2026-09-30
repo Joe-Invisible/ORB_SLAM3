@@ -68,10 +68,6 @@ int main(int argc, char** argv) {
             << "SLAM   : " << (cfg.run_slam ? "enabled" : "disabled") << '\n'
             << "Record : " << (cfg.record ? cfg.dataset_dir : "disabled") << "\n\n";
 
-        // Deliberately initialise acquisition before ORB-SLAM3. Record-only mode
-        // therefore never constructs a SLAM system at all.
-        if (!source->open()) return 1;
-
         std::unique_ptr<DatasetRecorder> recorder;
         std::ofstream camera_timing_csv;
         if (cfg.record) {
@@ -91,6 +87,17 @@ int main(int argc, char** argv) {
                 cfg.viewer,
                 cfg.output_dir));
         }
+
+        // Start live acquisition only after potentially expensive SLAM setup.
+        // OrbSlamRunner construction loads the ORB vocabulary and can take
+        // several seconds. Opening the PTS-based source before that can leave
+        // its first frame stale while SLAM initializes, causing ORB-SLAM3 to
+        // see a multi-second timestamp jump on the next frame.
+        //
+        // Record-only mode is unchanged: when cfg.run_slam is false, no SLAM
+        // system is constructed and acquisition opens immediately after the
+        // optional recorder setup.
+        if (!source->open()) return 1;
 
         std::cout << "Live processing started. Press Ctrl+C to stop.\n\n";
 

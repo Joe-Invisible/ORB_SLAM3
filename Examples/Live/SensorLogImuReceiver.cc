@@ -260,11 +260,13 @@ bool SensorLogImuReceiver::waitUntilPhoneTime(double phone_time_s,
     data_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&] {
         return !running_ ||
                (have_latest_synced_time_ &&
-                latest_synced_phone_time_s_ >= phone_time_s);
+                latest_synced_phone_time_s_ >
+                    phone_time_s + kTimestampEpsilonS);
     });
 
     return have_latest_synced_time_ &&
-           latest_synced_phone_time_s_ >= phone_time_s;
+           latest_synced_phone_time_s_ >
+               phone_time_s + kTimestampEpsilonS;
 }
 
 void SensorLogImuReceiver::discardThrough(double phone_time_s) {
@@ -275,14 +277,17 @@ void SensorLogImuReceiver::discardThrough(double phone_time_s) {
     }
 }
 
-void SensorLogImuReceiver::popThrough(double end_phone_time_s,
-                                      double origin_phone_time_s,
-                                      std::vector<LiveImuSample>& output) {
+void SensorLogImuReceiver::popThroughAndOneAfter(
+    double end_phone_time_s,
+    double origin_phone_time_s,
+    std::vector<LiveImuSample>& output) {
     output.clear();
     std::lock_guard<std::mutex> lock(mutex_);
 
-    while (!synced_samples_.empty() &&
-           synced_samples_.front().phone_time_s <= end_phone_time_s) {
+    while (!synced_samples_.empty()) {
+        const bool is_after =
+            synced_samples_.front().phone_time_s > end_phone_time_s;
+
         const SyncedSample s = synced_samples_.front();
         synced_samples_.pop_front();
 
@@ -296,6 +301,8 @@ void SensorLogImuReceiver::popThrough(double end_phone_time_s,
         m.accel_y = s.ay;
         m.accel_z = s.az;
         output.push_back(m);
+
+        if (is_after) break;
     }
 }
 
