@@ -3039,15 +3039,20 @@ bool Tracking::TrackLocalMap()
                 aux2++;
         }
 
+    const int preMatches = aux1;
+    const int preOutliers = aux2;
+    // GetPose() is Tcw; its inverse translation is the camera center in world coordinates.
+    const Sophus::SE3f poseBeforeOptimization = mCurrentFrame.GetPose();
+    const char* optimizer = "PoseOptimization";
     int inliers;
     if (!mpAtlas->isImuInitialized())
-        Optimizer::PoseOptimization(&mCurrentFrame);
+        inliers = Optimizer::PoseOptimization(&mCurrentFrame);
     else
     {
         if(mCurrentFrame.mnId<=mnLastRelocFrameId+mnFramesToResetIMU)
         {
             Verbose::PrintMess("TLM: PoseOptimization ", Verbose::VERBOSITY_DEBUG);
-            Optimizer::PoseOptimization(&mCurrentFrame);
+            inliers = Optimizer::PoseOptimization(&mCurrentFrame);
         }
         else
         {
@@ -3055,11 +3060,13 @@ bool Tracking::TrackLocalMap()
             if(!mbMapUpdated) //  && (mnMatchesInliers>30))
             {
                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastFrame ", Verbose::VERBOSITY_DEBUG);
+                optimizer = "PoseInertialLastFrame";
                 inliers = Optimizer::PoseInertialOptimizationLastFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
             }
             else
             {
                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastKeyFrame ", Verbose::VERBOSITY_DEBUG);
+                optimizer = "PoseInertialLastKF";
                 inliers = Optimizer::PoseInertialOptimizationLastKeyFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
             }
         }
@@ -3073,6 +3080,48 @@ bool Tracking::TrackLocalMap()
             if(mCurrentFrame.mvbOutlier[i])
                 aux2++;
         }
+
+    const int postMatches = aux1;
+    const int postOutliers = aux2;
+    const Sophus::SE3f poseAfterOptimization = mCurrentFrame.GetPose();
+
+    // Keep the original return conditions and log the selected condition at each exit.
+    const auto localMapResult = [&](bool success, const char* reason)
+    {
+        const bool inertial = mSensor == System::IMU_MONOCULAR ||
+                              mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD;
+        const bool imuInitialized = inertial && mpAtlas->isImuInitialized();
+        // t0IMU is only valid after successful IMU initialization.
+        const double sinceInit = imuInitialized ? mCurrentFrame.mTimeStamp - t0IMU : -1.0;
+        const bool earlyMonoImu = mSensor == System::IMU_MONOCULAR &&
+                                  imuInitialized && sinceInit >= 0.0 && sinceInit <= 3.0;
+        if(earlyMonoImu || (inertial && !success))
+        {
+            const float poseCorrection = (poseAfterOptimization.inverse().translation() -
+                                          poseBeforeOptimization.inverse().translation()).norm();
+            const float rotationCorrection = (poseAfterOptimization.so3() *
+                                              poseBeforeOptimization.so3().inverse()).log().norm() *
+                                             57.29577951308232f;
+            cout << "[LOCAL MAP DBG]"
+                 << " frame=" << mCurrentFrame.mnId
+                 << " since_init=" << sinceInit
+                 << " map_updated=" << (mbMapUpdated ? 1 : 0)
+                 << " local_kfs=" << mvpLocalKeyFrames.size()
+                 << " local_pts=" << mvpLocalMapPoints.size()
+                 << " pre_matches=" << preMatches
+                 << " pre_outliers=" << preOutliers
+                 << " optimizer=" << optimizer
+                 << " optimizer_inliers=" << inliers
+                 << " post_matches=" << postMatches
+                 << " post_outliers=" << postOutliers
+                 << " final_inliers=" << mnMatchesInliers
+                 << " pose_corr_m=" << poseCorrection
+                 << " pose_corr_deg=" << rotationCorrection
+                 << " success=" << (success ? 1 : 0)
+                 << " reason=" << reason << endl;
+        }
+        return success;
+    };
 
     mnMatchesInliers = 0;
 
@@ -3101,36 +3150,36 @@ bool Tracking::TrackLocalMap()
     // More restrictive if there was a relocalization recently
     mpLocalMapper->mnMatchesInliers=mnMatchesInliers;
     if(mCurrentFrame.mnId<mnLastRelocFrameId+mMaxFrames && mnMatchesInliers<50)
-        return false;
+        return localMapResult(false, "recent_reloc_inliers_lt_50");
 
     if((mnMatchesInliers>10)&&(mState==RECENTLY_LOST))
-        return true;
+        return localMapResult(true, "recently_lost_inliers_gt_10");
 
 
     if (mSensor == System::IMU_MONOCULAR)
     {
         if((mnMatchesInliers<15 && mpAtlas->isImuInitialized())||(mnMatchesInliers<50 && !mpAtlas->isImuInitialized()))
         {
-            return false;
+            return localMapResult(false, "imu_mono_inliers_below_threshold");
         }
         else
-            return true;
+            return localMapResult(true, "imu_mono_ok");
     }
     else if (mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD)
     {
         if(mnMatchesInliers<15)
         {
-            return false;
+            return localMapResult(false, "imu_stereo_rgbd_inliers_lt_15");
         }
         else
-            return true;
+            return localMapResult(true, "imu_stereo_rgbd_ok");
     }
     else
     {
         if(mnMatchesInliers<30)
-            return false;
+            return localMapResult(false, "visual_inliers_lt_30");
         else
-            return true;
+            return localMapResult(true, "visual_ok");
     }
 }
 
@@ -3458,6 +3507,8 @@ void Tracking::SearchLocalPoints()
         }
     }
 
+    int projectionMatches = 0;
+    int searchThreshold = -1; // No projection search when nToMatch is zero.
     if(nToMatch>0)
     {
         ORBmatcher matcher(0.8);
@@ -3483,7 +3534,25 @@ void Tracking::SearchLocalPoints()
         if(mState==LOST || mState==RECENTLY_LOST) // Lost for less than 1 second
             th=15; // 15
 
-        int matches = matcher.SearchByProjection(mCurrentFrame, mvpLocalMapPoints, th, mpLocalMapper->mbFarPoints, mpLocalMapper->mThFarPoints);
+        searchThreshold = th;
+        projectionMatches = matcher.SearchByProjection(mCurrentFrame, mvpLocalMapPoints, th, mpLocalMapper->mbFarPoints, mpLocalMapper->mThFarPoints);
+    }
+
+    if(mSensor == System::IMU_MONOCULAR && mpAtlas->isImuInitialized())
+    {
+        const double sinceInit = mCurrentFrame.mTimeStamp - t0IMU;
+        if(sinceInit >= 0.0 && sinceInit <= 3.0)
+        {
+            cout << "[LOCAL SEARCH DBG]"
+                 << " frame=" << mCurrentFrame.mnId
+                 << " since_init=" << sinceInit
+                 << " local_kfs=" << mvpLocalKeyFrames.size()
+                 << " local_pts=" << mvpLocalMapPoints.size()
+                 << " in_frustum=" << nToMatch
+                 << " proj_matches=" << projectionMatches
+                 << " th=" << searchThreshold
+                 << " map_updated=" << (mbMapUpdated ? 1 : 0) << endl;
+        }
     }
 }
 
