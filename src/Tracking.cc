@@ -31,6 +31,9 @@
 
 #include <iostream>
 
+#include <algorithm>
+#include <cmath>
+
 #include <mutex>
 #include <chrono>
 
@@ -1743,6 +1746,47 @@ bool Tracking::PredictStateIMU()
         return false;
     }
 
+    const auto printImuPredictionDebug =
+        [this](const char* source,
+               const float t12,
+               const Eigen::Matrix3f& dR,
+               const Eigen::Vector3f& dV,
+               const Eigen::Vector3f& dP,
+               const Eigen::Vector3f& twb1,
+               const Eigen::Vector3f& Vwb1,
+               const Eigen::Vector3f& twb2,
+               const Eigen::Vector3f& Vwb2)
+    {
+        const float cos_angle = std::max(
+            -1.0f,
+            std::min(1.0f, 0.5f * (dR.trace() - 1.0f)));
+        const float dR_deg =
+            std::acos(cos_angle) * 57.29577951308232f;
+        const float pred_step = (twb2 - twb1).norm();
+        const double since_imu_init =
+            mCurrentFrame.mTimeStamp - t0IMU;
+
+        if(since_imu_init <= 3.0 ||
+           pred_step > 0.25f ||
+           Vwb2.norm() > 5.0f)
+        {
+            cout << "[IMU PRED DBG]"
+                 << " frame=" << mCurrentFrame.mnId
+                 << " source=" << source
+                 << " since_init=" << since_imu_init
+                 << " dt=" << t12
+                 << " dR_deg=" << dR_deg
+                 << " dV=" << dV.norm()
+                 << " dP=" << dP.norm()
+                 << " v1=" << Vwb1.norm()
+                 << " pred_step=" << pred_step
+                 << " v2=" << Vwb2.norm()
+                 << " p1=[" << twb1.transpose() << "]"
+                 << " p2=[" << twb2.transpose() << "]"
+                 << endl;
+        }
+    };
+
     if(mbMapUpdated && mpLastKeyFrame)
     {
         const Eigen::Vector3f twb1 = mpLastKeyFrame->GetImuPosition();
@@ -1751,10 +1795,25 @@ bool Tracking::PredictStateIMU()
 
         const Eigen::Vector3f Gz(0, 0, -IMU::GRAVITY_VALUE);
         const float t12 = mpImuPreintegratedFromLastKF->dT;
+        const Eigen::Matrix3f dR =
+            mpImuPreintegratedFromLastKF->GetDeltaRotation(
+                mpLastKeyFrame->GetImuBias());
+        const Eigen::Vector3f dP =
+            mpImuPreintegratedFromLastKF->GetDeltaPosition(
+                mpLastKeyFrame->GetImuBias());
+        const Eigen::Vector3f dV =
+            mpImuPreintegratedFromLastKF->GetDeltaVelocity(
+                mpLastKeyFrame->GetImuBias());
 
-        Eigen::Matrix3f Rwb2 = IMU::NormalizeRotation(Rwb1 * mpImuPreintegratedFromLastKF->GetDeltaRotation(mpLastKeyFrame->GetImuBias()));
-        Eigen::Vector3f twb2 = twb1 + Vwb1*t12 + 0.5f*t12*t12*Gz+ Rwb1*mpImuPreintegratedFromLastKF->GetDeltaPosition(mpLastKeyFrame->GetImuBias());
-        Eigen::Vector3f Vwb2 = Vwb1 + t12*Gz + Rwb1 * mpImuPreintegratedFromLastKF->GetDeltaVelocity(mpLastKeyFrame->GetImuBias());
+        Eigen::Matrix3f Rwb2 = IMU::NormalizeRotation(Rwb1 * dR);
+        Eigen::Vector3f twb2 =
+            twb1 + Vwb1*t12 + 0.5f*t12*t12*Gz + Rwb1*dP;
+        Eigen::Vector3f Vwb2 =
+            Vwb1 + t12*Gz + Rwb1*dV;
+
+        printImuPredictionDebug(
+            "KF", t12, dR, dV, dP, twb1, Vwb1, twb2, Vwb2);
+
         mCurrentFrame.SetImuPoseVelocity(Rwb2,twb2,Vwb2);
 
         mCurrentFrame.mImuBias = mpLastKeyFrame->GetImuBias();
@@ -1768,10 +1827,24 @@ bool Tracking::PredictStateIMU()
         const Eigen::Vector3f Vwb1 = mLastFrame.GetVelocity();
         const Eigen::Vector3f Gz(0, 0, -IMU::GRAVITY_VALUE);
         const float t12 = mCurrentFrame.mpImuPreintegratedFrame->dT;
+        const Eigen::Matrix3f dR =
+            mCurrentFrame.mpImuPreintegratedFrame->GetDeltaRotation(
+                mLastFrame.mImuBias);
+        const Eigen::Vector3f dP =
+            mCurrentFrame.mpImuPreintegratedFrame->GetDeltaPosition(
+                mLastFrame.mImuBias);
+        const Eigen::Vector3f dV =
+            mCurrentFrame.mpImuPreintegratedFrame->GetDeltaVelocity(
+                mLastFrame.mImuBias);
 
-        Eigen::Matrix3f Rwb2 = IMU::NormalizeRotation(Rwb1 * mCurrentFrame.mpImuPreintegratedFrame->GetDeltaRotation(mLastFrame.mImuBias));
-        Eigen::Vector3f twb2 = twb1 + Vwb1*t12 + 0.5f*t12*t12*Gz+ Rwb1 * mCurrentFrame.mpImuPreintegratedFrame->GetDeltaPosition(mLastFrame.mImuBias);
-        Eigen::Vector3f Vwb2 = Vwb1 + t12*Gz + Rwb1 * mCurrentFrame.mpImuPreintegratedFrame->GetDeltaVelocity(mLastFrame.mImuBias);
+        Eigen::Matrix3f Rwb2 = IMU::NormalizeRotation(Rwb1 * dR);
+        Eigen::Vector3f twb2 =
+            twb1 + Vwb1*t12 + 0.5f*t12*t12*Gz + Rwb1*dP;
+        Eigen::Vector3f Vwb2 =
+            Vwb1 + t12*Gz + Rwb1*dV;
+
+        printImuPredictionDebug(
+            "FRAME", t12, dR, dV, dP, twb1, Vwb1, twb2, Vwb2);
 
         mCurrentFrame.SetImuPoseVelocity(Rwb2,twb2,Vwb2);
 

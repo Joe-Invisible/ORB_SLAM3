@@ -1299,6 +1299,19 @@ void LocalMapping::InitializeIMU(float priorG, float priorA, bool bFIBA)
 
     std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
 
+    cout << "[IMU OPT DBG]"
+         << " KFs=" << N
+         << " span=" << (vpKF.back()->mTimeStamp - vpKF.front()->mTimeStamp)
+         << " initTime=" << mInitTime
+         << " scale=" << mScale
+         << " bg=[" << mbg.transpose() << "]"
+         << " ba=[" << mba.transpose() << "]"
+         << " Rwg=["
+         << mRwg(0,0) << ',' << mRwg(0,1) << ',' << mRwg(0,2) << ';'
+         << mRwg(1,0) << ',' << mRwg(1,1) << ',' << mRwg(1,2) << ';'
+         << mRwg(2,0) << ',' << mRwg(2,1) << ',' << mRwg(2,2) << ']'
+         << endl;
+
     if (mScale<1e-1)
     {
         cout << "scale too small" << endl;
