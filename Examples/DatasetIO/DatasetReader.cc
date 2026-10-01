@@ -33,6 +33,8 @@ DatasetReader::DatasetReader(const std::string& dataset_dir)
     : dataset_dir_(dataset_dir),
       camera_(loadCameraCsv(joinPath(dataset_dir, "camera.csv"))),
       imu_(loadImuCsvIfPresent(joinPath(dataset_dir, "imu.csv"))) {
+    raw_gyro_ = loadRawCsv(joinPath(dataset_dir, "gyro.csv"));
+    raw_accel_ = loadRawCsv(joinPath(dataset_dir, "accel.csv"));
     validateCamera(camera_);
     validateImu(imu_);
 }
@@ -113,4 +115,24 @@ void DatasetReader::validateImu(const std::vector<ImuSample>& imu) {
             throw std::runtime_error("imu.csv timestamps are not strictly increasing");
         }
     }
+}
+
+std::vector<RawImuSample> DatasetReader::loadRawCsv(const std::string& path) {
+    std::ifstream f(path.c_str());
+    std::vector<RawImuSample> out;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (isCommentOrBlank(line)) continue;
+        const auto c = splitCsv(line);
+        if (!c.empty() && c[0] == "timestamp_ns") continue;
+        if (c.size() < 5) throw std::runtime_error("Bad raw IMU row: " + line);
+        RawImuSample sample;
+        sample.timestamp_ns = std::stoll(c[0]);
+        sample.host_ts = std::stod(c[1]);
+        sample.x = std::stod(c[2]); sample.y = std::stod(c[3]); sample.z = std::stod(c[4]);
+        if (!out.empty() && sample.timestamp_ns <= out.back().timestamp_ns)
+            throw std::runtime_error(path + " timestamps are not strictly increasing");
+        out.push_back(sample);
+    }
+    return out;
 }

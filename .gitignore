@@ -206,3 +206,6 @@ feature_counts.csv
 /results/**/plots/
 /results/**/*.png
 /status*.txt
+
+# Agent configs
+AGENTS.md

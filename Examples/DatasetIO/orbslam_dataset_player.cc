@@ -115,6 +115,8 @@ int main(int argc, char** argv) {
 
         if (args.sensor == SENSOR_MONO_IMU && imu.empty()) {
             throw std::runtime_error(
+                dataset.hasRawImu() ?
+                "Dataset contains independent raw gyro/accel. Visual-inertial replay requires a future explicit resampling adapter; use --sensor mono now." :
                 "--sensor mono-imu requested, but this dataset has no IMU stream");
         }
 
